@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 import json
 import os
 
@@ -43,7 +44,8 @@ def load_transactions(file):
     try:
         df = pd.read_csv(file,)
         df.columns = [col.strip() for col in df.columns]
-        df["Amount"] = df["Amount"].str.replace(",", "", regex=False).astype(float)
+        df["Amount"] = df["Amount"].astype(str).str.replace(",", "", regex=False)
+        df["Amount"] = pd.to_numeric(df["Amount"], errors='coerce')
         df["Date"] = pd.to_datetime(df["Date"], format="%d %b %Y")
         
         return categorize_transaction(df)
@@ -73,6 +75,10 @@ def main():
             debits_df = df[df["Debit/Credit"] == "Debit"].copy()
             credits_df = df[df["Debit/Credit"] == "Credit"].copy()
             
+            # Ensure Amount is numeric
+            debits_df["Amount"] = pd.to_numeric(debits_df["Amount"], errors='coerce')
+            credits_df["Amount"] = pd.to_numeric(credits_df["Amount"], errors='coerce')
+            
             st.session_state.debits_df = debits_df.copy()
         
             tab1, tab2 = st.tabs(["Expenses (Debit)", "Payments/Refunds (Credit)"])
@@ -89,28 +95,35 @@ def main():
                         st._rerun()
                 
                 st.subheader("Expense Summary")
-                category_totals = st.session_state.debits_df.groupby("Category")["Amount"].sum().reset_index()
-                category_totals = category_totals.sort_values(by="Amount", ascending=False)
-                
-                
+                # Calculate category totals (filter invalid amounts inline)
+                category_totals = (
+                    st.session_state.debits_df[
+                        st.session_state.debits_df["Amount"].notna() & 
+                        (st.session_state.debits_df["Amount"] > 0)
+                    ]
+                    .groupby("Category")["Amount"]
+                    .sum()
+                    .reset_index()
+                    .sort_values("Amount", ascending=False)
+                )
+                category_totals["Amount"] = category_totals["Amount"].astype(float)
                 
                 st.dataframe(
                     category_totals, 
-                    column_config={
-                        "Amount": st.column_config.NumberColumn("Amount", format="$%.2f")
-                    },
+                    column_config={"Amount": st.column_config.NumberColumn("Amount", format="$%.2f")},
                     use_container_width=True,
                     hide_index=True
                 )
                 
-                fig = px.pie(
-                    category_totals, 
-                    names="Category", 
-                    values="Amount",  
-                    title="Expense Distribution by Category"
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
+                # Create pie chart
+                if len(category_totals) > 0:
+                    fig = go.Figure(data=[go.Pie(
+                        labels=category_totals["Category"].tolist(),
+                        values=category_totals["Amount"].tolist(),
+                        textinfo='percent+label'
+                    )])
+                    fig.update_layout(title="Expense Distribution by Category")
+                    st.plotly_chart(fig, use_container_width=True)
                 
                         
                 st.subheader("Your Expenses")
@@ -144,7 +157,7 @@ def main():
             with tab2:
                 st.subheader("Payment Summary")
                 total_payments = credits_df["Amount"].sum()
-                st.metric("Total Payments", f"${total_payments: $,.2f}")
+                st.metric("Total Payments", f"${total_payments:,.2f}")
                 st.write(credits_df)
         
 main()
