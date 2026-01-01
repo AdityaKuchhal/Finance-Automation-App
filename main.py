@@ -41,7 +41,7 @@ def categorize_transaction(df):
 
 def load_transactions(file):
     try:
-        df = pd.read_csv(file, dtype=str)
+        df = pd.read_csv(file,)
         df.columns = [col.strip() for col in df.columns]
         df["Amount"] = df["Amount"].str.replace(",", "", regex=False).astype(float)
         df["Date"] = pd.to_datetime(df["Date"], format="%d %b %Y")
@@ -87,6 +87,31 @@ def main():
                         save_categories()
                         # st.success(f"Added a new category: {new_category}")
                         st._rerun()
+                
+                st.subheader("Expense Summary")
+                category_totals = st.session_state.debits_df.groupby("Category")["Amount"].sum().reset_index()
+                category_totals = category_totals.sort_values(by="Amount", ascending=False)
+                
+                
+                
+                st.dataframe(
+                    category_totals, 
+                    column_config={
+                        "Amount": st.column_config.NumberColumn("Amount", format="$%.2f")
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                fig = px.pie(
+                    category_totals, 
+                    names="Category", 
+                    values="Amount",  
+                    title="Expense Distribution by Category"
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
                         
                 st.subheader("Your Expenses")
                 edited_df = st.data_editor(
@@ -115,8 +140,11 @@ def main():
                         details = row["Details"]
                         st.session_state.debits_df.at[idx, "Category"] = new_category
                         add_keyword_to_category(new_category, details) 
-                
+                        
             with tab2:
+                st.subheader("Payment Summary")
+                total_payments = credits_df["Amount"].sum()
+                st.metric("Total Payments", f"${total_payments: $,.2f}")
                 st.write(credits_df)
         
 main()
